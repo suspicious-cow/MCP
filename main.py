@@ -70,6 +70,9 @@ class FileRequest(BaseModel):
 class FileContentResponse(BaseModel):
     content: str
 
+class FileListResponse(BaseModel):
+    files: list[str]
+
 FILES_DIR = os.path.join(os.getcwd(), "files")
 
 # Update file listing to use files/ directory

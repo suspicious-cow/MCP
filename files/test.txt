@@ -1,0 +1,2 @@
+This is a test file in the files directory.
+You can use the /mcp/list_files and /mcp/file_content endpoints to interact with it!
