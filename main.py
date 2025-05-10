@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 import os
 import openai
@@ -63,3 +63,32 @@ def pirate_summarize(request: SummarizeRequest):
         model="o4-mini"
     )
     return SummarizeResponse(summary=summary)
+
+class FileRequest(BaseModel):
+    filename: str
+
+class FileContentResponse(BaseModel):
+    content: str
+
+FILES_DIR = os.path.join(os.getcwd(), "files")
+
+# Update file listing to use files/ directory
+@app.get("/mcp/list_files", response_model=FileListResponse)
+def list_files():
+    if not os.path.exists(FILES_DIR):
+        return FileListResponse(files=[])
+    files = [f for f in os.listdir(FILES_DIR) if os.path.isfile(os.path.join(FILES_DIR, f))]
+    return FileListResponse(files=files)
+
+# Update file content to use files/ directory
+@app.post("/mcp/file_content", response_model=FileContentResponse)
+def file_content(request: FileRequest):
+    try:
+        safe_path = os.path.abspath(os.path.join(FILES_DIR, request.filename))
+        if not safe_path.startswith(FILES_DIR):
+            raise HTTPException(status_code=400, detail="Invalid file path.")
+        with open(safe_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return FileContentResponse(content=content)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Error reading file: {str(e)}")
