@@ -15,14 +15,21 @@ def handshake():
 class WorkspaceContext(BaseModel):
     root_path: str
     open_files: list[str]
+    project_name: str | None = None
+    language: str | None = None
+    capabilities: list[str] | None = None
 
 # MCP context endpoint: returns a simple workspace context
 @app.get("/mcp/context", response_model=WorkspaceContext)
 def get_context():
-    # Example: hardcoded context for demo
+    # Dynamically list files in the files/ directory as open_files
+    open_files = [f for f in os.listdir(FILES_DIR) if os.path.isfile(os.path.join(FILES_DIR, f))]
     return WorkspaceContext(
-        root_path="/workspace/MCP",
-        open_files=["main.py", "README.md"]
+        root_path=FILES_DIR,
+        open_files=open_files,
+        project_name="MCP Demo",
+        language="python",
+        capabilities=["summarize", "list_files", "file_content", "create_file", "upload_pdf"]
     )
 
 class SummarizeRequest(BaseModel):
