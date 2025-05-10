@@ -1,5 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
+import os
+import openai
 
 app = FastAPI()
 
@@ -21,3 +23,25 @@ def get_context():
         root_path="/workspace/MCP",
         open_files=["main.py", "README.md"]
     )
+
+class SummarizeRequest(BaseModel):
+    text: str
+
+class SummarizeResponse(BaseModel):
+    summary: str
+
+@app.post("/mcp/summarize", response_model=SummarizeResponse)
+def summarize(request: SummarizeRequest):
+    # Use OpenAI's Chat Completions API to summarize the text
+    try:
+        response = openai.chat.completions.create(
+            model="o4-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that summarizes text."},
+                {"role": "user", "content": f"Summarize the following text:\n{request.text}"}
+            ],
+        )
+        summary = response.choices[0].message.content.strip()
+    except Exception as e:
+        summary = f"Error: {str(e)}"
+    return SummarizeResponse(summary=summary)
