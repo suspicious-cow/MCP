@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from pydantic import BaseModel
 import os
 import openai
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
@@ -73,6 +74,14 @@ class FileContentResponse(BaseModel):
 class FileListResponse(BaseModel):
     files: list[str]
 
+class FileCreateRequest(BaseModel):
+    filename: str
+    content: str
+
+class FileCreateResponse(BaseModel):
+    success: bool
+    message: str
+
 FILES_DIR = os.path.join(os.getcwd(), "files")
 
 # Update file listing to use files/ directory
@@ -95,3 +104,29 @@ def file_content(request: FileRequest):
         return FileContentResponse(content=content)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Error reading file: {str(e)}")
+
+@app.post("/mcp/create_file", response_model=FileCreateResponse)
+def create_file(request: FileCreateRequest):
+    safe_path = os.path.abspath(os.path.join(FILES_DIR, request.filename))
+    if not safe_path.startswith(FILES_DIR):
+        return FileCreateResponse(success=False, message="Invalid file path.")
+    try:
+        with open(safe_path, "w", encoding="utf-8") as f:
+            f.write(request.content)
+        return FileCreateResponse(success=True, message="File created successfully.")
+    except Exception as e:
+        return FileCreateResponse(success=False, message=f"Error: {str(e)}")
+
+@app.post("/mcp/upload_pdf")
+def upload_pdf(file: UploadFile = File(...)):
+    if not file.filename.lower().endswith('.pdf'):
+        return JSONResponse(status_code=400, content={"success": False, "message": "Only PDF files are allowed."})
+    safe_path = os.path.abspath(os.path.join(FILES_DIR, file.filename))
+    if not safe_path.startswith(FILES_DIR):
+        return JSONResponse(status_code=400, content={"success": False, "message": "Invalid file path."})
+    try:
+        with open(safe_path, "wb") as f:
+            f.write(file.file.read())
+        return {"success": True, "message": "PDF uploaded successfully."}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "message": f"Error: {str(e)}"})
