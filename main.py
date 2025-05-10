@@ -30,18 +30,36 @@ class SummarizeRequest(BaseModel):
 class SummarizeResponse(BaseModel):
     summary: str
 
-@app.post("/mcp/summarize", response_model=SummarizeResponse)
-def summarize(request: SummarizeRequest):
-    # Use OpenAI's Chat Completions API to summarize the text
+def chat_completion(user_content: str, system_content: str = "You are a helpful assistant.", model: str = "o4-mini") -> str:
+    """
+    Helper function to call OpenAI's chat completion API with custom system instructions and model.
+    """
     try:
         response = openai.chat.completions.create(
-            model="o4-mini",
+            model=model,
             messages=[
-                {"role": "system", "content": "You are a helpful assistant that summarizes text."},
-                {"role": "user", "content": f"Summarize the following text:\n{request.text}"}
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content}
             ],
         )
-        summary = response.choices[0].message.content.strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
-        summary = f"Error: {str(e)}"
+        return f"Error: {str(e)}"
+
+@app.post("/mcp/summarize", response_model=SummarizeResponse)
+def summarize(request: SummarizeRequest):
+    summary = chat_completion(
+        user_content=f"Summarize the following text:\n{request.text}",
+        system_content="You are a helpful assistant that summarizes text.",
+        model="o4-mini"
+    )
+    return SummarizeResponse(summary=summary)
+
+@app.post("/mcp/pirate_summarize", response_model=SummarizeResponse)
+def pirate_summarize(request: SummarizeRequest):
+    summary = chat_completion(
+        user_content=f"Summarize the following text in the style of a pirate:\n{request.text}",
+        system_content="You are a helpful assistant that summarizes text in the style of a pirate. Use pirate language and expressions.",
+        model="o4-mini"
+    )
     return SummarizeResponse(summary=summary)
