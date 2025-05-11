@@ -32,12 +32,6 @@ def get_context():
         capabilities=["summarize", "list_files", "file_content", "create_file", "upload_pdf"]
     )
 
-class SummarizeRequest(BaseModel):
-    text: str
-
-class SummarizeResponse(BaseModel):
-    summary: str
-
 def chat_completion(user_content: str, system_content: str = "You are a helpful assistant.", model: str = "o4-mini") -> str:
     """
     Helper function to call OpenAI's chat completion API with custom system instructions and model.
@@ -53,24 +47,6 @@ def chat_completion(user_content: str, system_content: str = "You are a helpful 
         return response.choices[0].message.content.strip()
     except Exception as e:
         return f"Error: {str(e)}"
-
-@app.post("/mcp/summarize", response_model=SummarizeResponse)
-def summarize(request: SummarizeRequest):
-    summary = chat_completion(
-        user_content=f"Summarize the following text:\n{request.text}",
-        system_content="You are a helpful assistant that summarizes text.",
-        model="o4-mini"
-    )
-    return SummarizeResponse(summary=summary)
-
-@app.post("/mcp/pirate_summarize", response_model=SummarizeResponse)
-def pirate_summarize(request: SummarizeRequest):
-    summary = chat_completion(
-        user_content=f"Summarize the following text in the style of a pirate:\n{request.text}",
-        system_content="You are a helpful assistant that summarizes text in the style of a pirate. Use pirate language and expressions.",
-        model="o4-mini"
-    )
-    return SummarizeResponse(summary=summary)
 
 class FileRequest(BaseModel):
     filename: str
@@ -89,51 +65,100 @@ class FileCreateResponse(BaseModel):
     success: bool
     message: str
 
+class CapabilitiesResponse(BaseModel):
+    capabilities: list[str]
+    models: list[str] | None = None
+    file_types: list[str] | None = None
+
 FILES_DIR = os.path.join(os.getcwd(), "files")
 
 # Update file listing to use files/ directory
-@app.get("/mcp/list_files", response_model=FileListResponse)
-def list_files():
-    if not os.path.exists(FILES_DIR):
-        return FileListResponse(files=[])
-    files = [f for f in os.listdir(FILES_DIR) if os.path.isfile(os.path.join(FILES_DIR, f))]
-    return FileListResponse(files=files)
+@app.get("/mcp/capabilities", response_model=CapabilitiesResponse)
+def get_capabilities():
+    return CapabilitiesResponse(
+        capabilities=["summarize", "pirate_summarize", "list_files", "file_content", "create_file", "upload_pdf", "intent"],
+        models=["o4-mini"],
+        file_types=[".py", ".txt", ".pdf"]
+    )
 
-# Update file content to use files/ directory
-@app.post("/mcp/file_content", response_model=FileContentResponse)
-def file_content(request: FileRequest):
-    try:
-        safe_path = os.path.abspath(os.path.join(FILES_DIR, request.filename))
-        if not safe_path.startswith(FILES_DIR):
-            raise HTTPException(status_code=400, detail="Invalid file path.")
-        with open(safe_path, "r", encoding="utf-8") as f:
+class IntentRequest(BaseModel):
+    action: str
+    target: str | None = None
+    parameters: dict | None = None
+
+class IntentResponse(BaseModel):
+    result: str
+    success: bool
+
+@app.post("/mcp/intent", response_model=IntentResponse)
+def handle_intent(request: IntentRequest):
+    # Summarize a file
+    if request.action == "summarize_file" and request.target:
+        file_path = os.path.abspath(os.path.join(FILES_DIR, request.target))
+        if not file_path.startswith(FILES_DIR) or not os.path.isfile(file_path):
+            return IntentResponse(result="File not found or invalid path.", success=False)
+        with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
-        return FileContentResponse(content=content)
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Error reading file: {str(e)}")
-
-@app.post("/mcp/create_file", response_model=FileCreateResponse)
-def create_file(request: FileCreateRequest):
-    safe_path = os.path.abspath(os.path.join(FILES_DIR, request.filename))
-    if not safe_path.startswith(FILES_DIR):
-        return FileCreateResponse(success=False, message="Invalid file path.")
-    try:
-        with open(safe_path, "w", encoding="utf-8") as f:
-            f.write(request.content)
-        return FileCreateResponse(success=True, message="File created successfully.")
-    except Exception as e:
-        return FileCreateResponse(success=False, message=f"Error: {str(e)}")
-
-@app.post("/mcp/upload_pdf")
-def upload_pdf(file: UploadFile = File(...)):
-    if not file.filename.lower().endswith('.pdf'):
-        return JSONResponse(status_code=400, content={"success": False, "message": "Only PDF files are allowed."})
-    safe_path = os.path.abspath(os.path.join(FILES_DIR, file.filename))
-    if not safe_path.startswith(FILES_DIR):
-        return JSONResponse(status_code=400, content={"success": False, "message": "Invalid file path."})
-    try:
-        with open(safe_path, "wb") as f:
-            f.write(file.file.read())
-        return {"success": True, "message": "PDF uploaded successfully."}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"success": False, "message": f"Error: {str(e)}"})
+        summary = chat_completion(
+            user_content=f"Summarize the following file content:\n{content}",
+            system_content="You are a helpful assistant that summarizes file content.",
+            model="o4-mini"
+        )
+        return IntentResponse(result=summary, success=True)
+    # Pirate summarize a file
+    if request.action == "pirate_summarize_file" and request.target:
+        file_path = os.path.abspath(os.path.join(FILES_DIR, request.target))
+        if not file_path.startswith(FILES_DIR) or not os.path.isfile(file_path):
+            return IntentResponse(result="File not found or invalid path.", success=False)
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        summary = chat_completion(
+            user_content=f"Summarize the following text in the style of a pirate:\n{content}",
+            system_content="You are a helpful assistant that summarizes text in the style of a pirate. Use pirate language and expressions.",
+            model="o4-mini"
+        )
+        return IntentResponse(result=summary, success=True)
+    # List files
+    if request.action == "list_files":
+        files = [f for f in os.listdir(FILES_DIR) if os.path.isfile(os.path.join(FILES_DIR, f))]
+        return IntentResponse(result="\n".join(files), success=True)
+    # Get file content
+    if request.action == "file_content" and request.target:
+        file_path = os.path.abspath(os.path.join(FILES_DIR, request.target))
+        if not file_path.startswith(FILES_DIR) or not os.path.isfile(file_path):
+            return IntentResponse(result="File not found or invalid path.", success=False)
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return IntentResponse(result=content, success=True)
+    # Create file
+    if request.action == "create_file" and request.parameters:
+        filename = request.parameters.get("filename")
+        content = request.parameters.get("content", "")
+        if not filename:
+            return IntentResponse(result="Missing filename.", success=False)
+        safe_path = os.path.abspath(os.path.join(FILES_DIR, filename))
+        if not safe_path.startswith(FILES_DIR):
+            return IntentResponse(result="Invalid file path.", success=False)
+        try:
+            with open(safe_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            return IntentResponse(result="File created successfully.", success=True)
+        except Exception as e:
+            return IntentResponse(result=f"Error: {str(e)}", success=False)
+    # Upload PDF (base64 encoded in parameters)
+    if request.action == "upload_pdf" and request.parameters:
+        import base64
+        filename = request.parameters.get("filename")
+        filedata = request.parameters.get("filedata")
+        if not filename or not filedata or not filename.lower().endswith('.pdf'):
+            return IntentResponse(result="Missing filename or filedata, or not a PDF.", success=False)
+        safe_path = os.path.abspath(os.path.join(FILES_DIR, filename))
+        if not safe_path.startswith(FILES_DIR):
+            return IntentResponse(result="Invalid file path.", success=False)
+        try:
+            with open(safe_path, "wb") as f:
+                f.write(base64.b64decode(filedata))
+            return IntentResponse(result="PDF uploaded successfully.", success=True)
+        except Exception as e:
+            return IntentResponse(result=f"Error: {str(e)}", success=False)
+    return IntentResponse(result=f"Action '{request.action}' not supported.", success=False)
